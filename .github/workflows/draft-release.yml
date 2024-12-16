@@ -1,11 +1,9 @@
-name: Create Github Release
+name: Draft Github Release
 on:
   push:
-    tags:
-      - 'v*'
-  # branches to consider in the event; optional, defaults to all
+    # branches to consider in the event; optional, defaults to develop
     branches:
-      - master
+      - develop
   # pull_request event is required only for autolabeler
   pull_request:
     # Only following types are handled by the action, but one can default to all as well
