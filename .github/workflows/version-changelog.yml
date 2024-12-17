@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 jobs:
-  version:
+  version-changelog:
     runs-on: ubuntu-latest
     permissions:
       contents: write
