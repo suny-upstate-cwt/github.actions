@@ -3,8 +3,8 @@ name: "Update Changelog"
 on:
   pull_request:
     types: [closed]
-  repository_dispatch:
-    types: [update_changelog]
+    branches:
+      - develop
 
 jobs:
   update:

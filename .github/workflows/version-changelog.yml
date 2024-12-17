@@ -1,0 +1,33 @@
+# version-changelog.yml
+name: "Version Changelog"
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - develop
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Update Changelog
+        uses: stefanzweifel/changelog-updater-action@v1
+        with:
+          latest-version: ${{ github.ref_name }}  # This will be the tag name
+          release-notes: "Release ${{ github.ref_name }}"
+
+      - name: Commit updated CHANGELOG
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          branch: develop
+          commit_message: "docs: update CHANGELOG.md for version ${{ github.ref_name }}"
+          file_pattern: CHANGELOG.md
