@@ -17,11 +17,15 @@ jobs:
           ref: develop
           fetch-depth: 0
 
-      - name: Update Changelog
-        uses: stefanzweifel/changelog-updater-action@v1
-        with:
-          latest-version: ${{ github.ref_name }}  # This will be the tag name
-          release-notes: "Release ${{ github.ref_name }}"
+      - name: Move Unreleased to Version
+        run: |
+            # Read current changelog
+            CHANGELOG=$(cat CHANGELOG.md)
+            VERSION="${GITHUB_REF#refs/tags/}"
+            DATE=$(date +%Y-%m-%d)
+            
+            # Replace "## Unreleased" with new version and add new unreleased section
+            echo "$CHANGELOG" | sed "s/## Unreleased/## [$VERSION] - $DATE\n\n## Unreleased/" > CHANGELOG.md
 
       - name: Commit updated CHANGELOG
         uses: stefanzweifel/git-auto-commit-action@v5
