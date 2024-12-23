@@ -9,54 +9,131 @@ on:
 jobs:
   update-changelog:
     runs-on: ubuntu-latest
+    outputs:
+      changelog_content: ${{ steps.setup-changelog.outputs.content }}
     steps:
       - uses: actions/checkout@v4
       
       - name: Setup Changelog if Missing
+        id: setup-changelog
         run: |
+          echo "Checking for CHANGELOG.md..."
           if [ ! -f CHANGELOG.md ]; then
+            echo "CHANGELOG.md not found, creating..."
+            delimiter="EOF_$(openssl rand -hex 8)"
             TODAY=$(date +"%m/%d/%Y")
-            cat << EOL > CHANGELOG.md
-              # Github.Actions Repository Changelog
-              *Note: the changes in this log are automatically generated and commited via github actions, modify only if you know what you are doing!*
-
-              ## **${TODAY} - Unreleased**
-            EOL
-            # Replace ${TODAY} with actual date since it's not expanded in the heredoc
-            sed -i "s/\${TODAY}/$TODAY/" CHANGELOG.md
+            
+            {
+              echo "content<<$delimiter"
+              echo "# ${{ github.event.repository.name }} Repository Changelog"
+              echo "*Note: the changes in this log are automatically generated and commited via github actions, modify only if you know what you are doing!*"
+              echo ""
+              echo "## **${TODAY} - Unreleased**"
+              echo "$delimiter"
+            } >> $GITHUB_OUTPUT
+            
+            {
+              echo "# ${{ github.event.repository.name }} Repository Changelog"
+              echo "*Note: the changes in this log are automatically generated and commited via github actions, modify only if you know what you are doing!*"
+              echo ""
+              echo "## **${TODAY} - Unreleased**"
+            } > CHANGELOG.md
+            
             echo "Created new CHANGELOG.md file"
+          else
+            echo "CHANGELOG.md exists, continuing..."
           fi
 
-      - name: Get PR Info and Update Changelog
+      - name: Get Commit Info and Update Changelog
+        if: success()
         run: |
-          # Get the latest commit message to extract PR number
+          echo "Starting changelog update..."
+          TODAY=$(date +"%m/%d/%Y")
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          PR_NUM=$(echo "$COMMIT_MSG" | grep -oP '#\K\d+' || echo "")
+          echo "Commit message: $COMMIT_MSG"
           
-          if [ ! -z "$PR_NUM" ]; then
-            # Get current date
-            TODAY=$(date +"%m/%d/%Y")
-            
-            # Check if Unreleased section exists
-            if ! grep -q "Unreleased" CHANGELOG.md; then
-              # Add Unreleased section after the header
-              sed -i '/^# Github.Actions Repository Changelog/a\\\n## **'"$TODAY"' - Unreleased**\n' CHANGELOG.md
-            fi
-            
-            # Update the Unreleased section date
-            sed -i "s/[0-9]\{2\}\/[0-9]\{2\}\/[0-9]\{4\} - Unreleased/$TODAY - Unreleased/" CHANGELOG.md
-            
-            # Add the new PR entry under Unreleased
-            PR_TITLE=$(gh pr view $PR_NUM --json title -q .title)
-            sed -i "/## \*\*.*Unreleased\*\*/a - PR #$PR_NUM: $PR_TITLE" CHANGELOG.md
+          PR_NUM=$(echo "$COMMIT_MSG" | grep -oP '#\K\d+' || echo "")
+          echo "PR number found: '$PR_NUM'"
+          
+          echo "Current CHANGELOG.md content:"
+          cat CHANGELOG.md
+          
+          TEMP_FILE=$(mktemp)
+          echo "Created temp file: $TEMP_FILE"
+          
+          if ! grep -q "Unreleased" CHANGELOG.md; then
+            echo "No Unreleased section found, adding..."
+            awk -v today="$TODAY" '
+              # Print first line (title)
+              NR == 1 {print; next}
+              # Print second line (note)
+              NR == 2 {
+                print
+                print ""
+                print "## **" today " - Unreleased**"
+                print ""
+              }
+              # Print rest of the file
+              NR > 2 {print}
+            ' CHANGELOG.md > "$TEMP_FILE"
+          else
+            echo "Updating existing Unreleased section..."
+            awk -v today="$TODAY" '
+              /## \*\*.*Unreleased\*\*/ {
+                sub(/[0-9]{2}\/[0-9]{2}\/[0-9]{4}/, today)
+              }
+              {print}
+            ' CHANGELOG.md > "$TEMP_FILE"
           fi
+          
+          echo "Adding new entry..."
+          if [ ! -z "$PR_NUM" ]; then
+            echo "Adding PR info..."
+            PR_TITLE=$(gh pr view $PR_NUM --json title -q .title)
+            echo "PR Title: $PR_TITLE"
+            awk -v pr="$PR_NUM" -v title="$PR_TITLE" '
+              /## \*\*.*Unreleased\*\*/ {
+                print
+                print "- PR #" pr ": " title
+                next
+              }
+              {print}
+            ' "$TEMP_FILE" > CHANGELOG.md
+          else
+            echo "Adding commit message..."
+            CLEAN_MSG=$(echo "$COMMIT_MSG" | head -n 1)
+            echo "Clean message: $CLEAN_MSG"
+            awk -v msg="$CLEAN_MSG" '
+              /## \*\*.*Unreleased\*\*/ {
+                print
+                print "- " msg
+                next
+              }
+              {print}
+            ' "$TEMP_FILE" > CHANGELOG.md
+          fi
+          
+          echo "Updated CHANGELOG.md content:"
+          cat CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Commit and Push Changes
+        if: success()
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add CHANGELOG.md
-          git commit -m "Update CHANGELOG.md [skip ci]" || exit 0
-          git push
+          
+          echo "Git status:"
+          git status
+          
+          echo "Checking for changes in CHANGELOG.md..."
+          if git status --porcelain | grep "CHANGELOG.md"; then
+            echo "Changes detected, committing..."
+            git add CHANGELOG.md
+            git commit -m "Update CHANGELOG.md [skip ci]"
+            git push
+            echo "Changes pushed successfully"
+          else
+            echo "No changes detected in CHANGELOG.md"
+          fi
