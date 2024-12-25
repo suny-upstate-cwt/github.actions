@@ -2,7 +2,7 @@ name: Update Changelog for Release
 on:
   push:
     tags:
-      - '*'
+      - 'b*'
 
 jobs:
   update-changelog:
