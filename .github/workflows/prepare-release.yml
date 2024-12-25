@@ -30,33 +30,111 @@ jobs:
           
           git checkout -b "$RELEASE_BRANCH"
           
-          # Process changelog...
-          [Previous changelog processing code]
+          # Create temp file
+          TEMP_FILE=$(mktemp)
           
-          # After branch is created and changes are made
-          git push origin "$RELEASE_BRANCH"
+          # First pass: Find if we already have this version in the changelog
+          if grep -q "$VERSION" CHANGELOG.md; then
+            echo "Error: Version $VERSION already exists in changelog"
+            exit 1
+          fi
           
-          # Delete the prep tag as it's no longer needed
-          git push origin :refs/tags/$PREP_TAG
+          # Second pass: Process the changelog
+          awk -v version="$VERSION" -v today="$TODAY" -v org="$ORG" -v proj="$PROJ" '
+            BEGIN {
+              found_unreleased = 0
+              reading_unreleased = 0
+              unreleased_content = ""
+            }
+            
+            # Store the header and note lines
+            NR == 1 { header = $0; next }
+            NR == 2 { note = $0; next }
+            
+            # Match the Unreleased section start
+            /## \*\*.*Unreleased\*\*/ {
+              found_unreleased = 1
+              reading_unreleased = 1
+              next
+            }
+            
+            # Match any other section header
+            /^## \*\*/ {
+              reading_unreleased = 0
+              if (!printed_version) {
+                print header
+                print note
+                print ""
+                if (unreleased_content != "") {
+                  print "## **[(" today ") - " version "](https://github.com/" org "/" proj "/releases/tag/" version ")**"
+                  printf "%s", unreleased_content
+                  print ""
+                }
+                printed_version = 1
+              }
+              print $0
+              next
+            }
+            
+            # Collect unreleased content or print regular content
+            {
+              if (reading_unreleased && NF > 0) {
+                unreleased_content = unreleased_content $0 "\n"
+              } else if (!reading_unreleased) {
+                print $0
+              }
+            }
+            
+            END {
+              if (!printed_version) {
+                print header
+                print note
+                print ""
+                if (unreleased_content != "") {
+                  print "## **[(" today ") - " version "](https://github.com/" org "/" proj "/releases/tag/" version ")**"
+                  printf "%s", unreleased_content
+                }
+              }
+            }
+          ' CHANGELOG.md > "$TEMP_FILE"
           
-          # Create PR for release branch
-          gh pr create \
-            --title "Release $VERSION" \
-            --body "## Release Preparation for $VERSION
+          # Check if any changes were made
+          if ! diff -q CHANGELOG.md "$TEMP_FILE" > /dev/null; then
+            cat "$TEMP_FILE" > CHANGELOG.md
             
-            Release branch created from prep tag: $PREP_TAG
+            # Commit changes
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add CHANGELOG.md
+            git commit -m "chore: Prepare changelog for $VERSION release"
             
-            ### Changelog Updates
-            - Converted Unreleased section to version $VERSION
-            - Removed Unreleased section for release
+            # Push release branch
+            git push origin "$RELEASE_BRANCH"
             
-            ### Next Steps
-            1. Review the changelog
-            2. Perform any final release preparations
-            3. Merge this PR to develop
-            4. Create final release tag" \
-            --base develop \
-            --head "$RELEASE_BRANCH"
+            # Delete the prep tag as it's no longer needed
+            git push origin :refs/tags/$PREP_TAG
             
+            # Create PR for release branch
+            gh pr create \
+              --title "Release $VERSION" \
+              --body "## Release Preparation for $VERSION
+              
+              Release branch created from prep tag: $PREP_TAG
+              
+              ### Changelog Updates
+              - Converted Unreleased section to version $VERSION
+              - Removed Unreleased section for release
+              
+              ### Next Steps
+              1. Review the changelog
+              2. Perform any final release preparations
+              3. Merge this PR to develop
+              4. Create final release tag" \
+              --base develop \
+              --head "$RELEASE_BRANCH"
+          else
+            echo "No changes needed in CHANGELOG.md"
+            exit 1
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
