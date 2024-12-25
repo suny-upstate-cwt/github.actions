@@ -1,0 +1,62 @@
+name: Prepare Release Branch
+on:
+  push:
+    tags:
+      - 'prep-v*'  # Only triggers on tags like prep-v1.0.0
+
+jobs:
+  create-release-branch:
+    if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/prep-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          
+      - name: Create Release Branch
+        run: |
+          # Extract version from prep tag (remove 'prep-' prefix)
+          PREP_TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${PREP_TAG#prep-}
+          RELEASE_BRANCH="release/${VERSION}"
+          TODAY=$(date +"%m/%d/%Y")
+          ORG="${{ github.repository_owner }}"
+          PROJ="${{ github.event.repository.name }}"
+          
+          echo "Prep tag: $PREP_TAG"
+          echo "Version: $VERSION"
+          echo "Creating release branch: $RELEASE_BRANCH"
+          
+          git checkout -b "$RELEASE_BRANCH"
+          
+          # Process changelog...
+          [Previous changelog processing code]
+          
+          # After branch is created and changes are made
+          git push origin "$RELEASE_BRANCH"
+          
+          # Delete the prep tag as it's no longer needed
+          git push origin :refs/tags/$PREP_TAG
+          
+          # Create PR for release branch
+          gh pr create \
+            --title "Release $VERSION" \
+            --body "## Release Preparation for $VERSION
+            
+            Release branch created from prep tag: $PREP_TAG
+            
+            ### Changelog Updates
+            - Converted Unreleased section to version $VERSION
+            - Removed Unreleased section for release
+            
+            ### Next Steps
+            1. Review the changelog
+            2. Perform any final release preparations
+            3. Merge this PR to develop
+            4. Create final release tag" \
+            --base develop \
+            --head "$RELEASE_BRANCH"
+            
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
