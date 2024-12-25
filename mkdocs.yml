@@ -13,8 +13,7 @@ plugins:
   - monorepo
   - blog
   - search
-  - macros:
-      include_dir: partials
+  - macros
   - tags
 markdown_extensions:
   - admonition
@@ -30,7 +29,6 @@ markdown_extensions:
       custom_checkbox: true
 theme:
     name: material
-    custom_dir: overrides
     features:
         - navigation.instant
         - navigation.tracking
