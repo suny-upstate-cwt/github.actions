@@ -1,48 +1,18 @@
-name: Create Release
+name: Publish Github Release
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version number (vX.Y.Z format)'
-        required: true
-        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
-  create-release:
+  publish_release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        
-      - name: Update Changelog for Release
-        run: |
-          TODAY=$(date +"%m/%d/%Y")
-          VERSION=${{ github.event.inputs.version }}
-          REPO="${GITHUB_REPOSITORY}"
-          
-          # Move Unreleased changes to new version section
-          sed -i "/## \*\*.*Unreleased\*\*/,/## \*\*/!b;/## \*\*/!{H;d};x;s/Unreleased/$TODAY - $VERSION/" CHANGELOG.md
-          
-          # Update version section to include release link
-          sed -i "s|$TODAY - $VERSION|[$TODAY - $VERSION](https://github.com/$REPO/releases/tag/$VERSION)|" CHANGELOG.md
-          
-          # Add new Unreleased section
-          sed -i "1i## **$TODAY - Unreleased**\n" CHANGELOG.md
-          
-      - name: Commit Changes
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add CHANGELOG.md
-          git commit -m "Update CHANGELOG.md for release ${{ github.event.inputs.version }} [skip ci]"
-          git push
-          
-      - name: Create and Push Tag
-        run: |
-          git tag ${{ github.event.inputs.version }}
-          git push origin ${{ github.event.inputs.version }}
-          
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - uses: release-drafter/release-drafter@v6
         with:
-          tag_name: ${{ github.event.inputs.version }}
-          generate_release_notes: true
+          publish: true  # Always publish since we're only triggering on tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
