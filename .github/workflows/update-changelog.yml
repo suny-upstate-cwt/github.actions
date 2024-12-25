@@ -1,114 +1,67 @@
-name: Update Changelog for Release
+name: Update Changelog
 on:
-  push:
-    tags:
-      - 'b*'
+  pull_request:
+    branches:
+      - develop
+    types: [closed]
 
 jobs:
   update-changelog:
-    if: github.ref_type == 'tag' && contains(github.ref, 'refs/tags/')
+    # Only run if the PR was merged (not just closed)
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: develop
           
-      - name: Update Changelog for Release
+      - name: Update Changelog
         run: |
-          echo "Processing release for tag..."
+          echo "Processing merged pull request..."
           
-          # Get the tag name
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          echo "Tag name: $TAG_NAME"
-          
-          # Get today's date
           TODAY=$(date +"%m/%d/%Y")
-          echo "Release date: $TODAY"
+          echo "Date: $TODAY"
+          PR_NUM=${{ github.event.pull_request.number }}
+          PR_TITLE="${{ github.event.pull_request.title }}"
           
           # Create temp file
           TEMP_FILE=$(mktemp)
           
           # Read the current changelog and process it
-          awk -v tag="$TAG_NAME" -v today="$TODAY" -v repo="${GITHUB_REPOSITORY#*/}" '
+          awk -v today="$TODAY" -v pr_num="$PR_NUM" -v pr_title="$PR_TITLE" '
             BEGIN {
-              # Initialize variables
-              in_unreleased = 0
-              unreleased_content = ""
-              printed_new_section = 0
+              found_unreleased = 0
             }
             
-            # Detect Unreleased section
             /## \*\*.*Unreleased\*\*/ {
-              in_unreleased = 1
               print
+              print "- PR #" pr_num ": " pr_title
+              found_unreleased = 1
               next
             }
             
-            # Start of any other section ends Unreleased
-            /^## \*\*/ {
-              if (in_unreleased) {
-                in_unreleased = 0
-                # Print the new versioned section before the next section
-                print ""
-                print "## **[(" today ") - " tag "](https://github.com/suny-upstate-cwt/" repo "/releases/tag/" tag ")**"
-                print unreleased_content
-                print ""
-              }
-              print
-              next
-            }
+            # Print everything else as is
+            { print }
             
-            # Collect content from Unreleased section
-            {
-              if (in_unreleased) {
-                if ($0 != "") {
-                  unreleased_content = unreleased_content $0 "\n"
-                }
-              } else {
-                print
-              }
-            }
-            
-            # At end of file, print new section if we havent yet
             END {
-              if (in_unreleased && !printed_new_section) {
-                print ""
-                print "## **[(" today ") - " tag "](https://github.com/suny-upstate-cwt/" repo "/releases/tag/" tag ")**"
-                print unreleased_content
+              if (!found_unreleased) {
+                print "## **" today " - Unreleased**"
+                print "- PR #" pr_num ": " pr_title
               }
             }
           ' CHANGELOG.md > "$TEMP_FILE"
           
-          # Create new Unreleased section at the top (after header)
-          awk '
-            NR == 1 { print; next }
-            NR == 2 { 
-              print
-              print ""
-              print "## **" strftime("%m/%d/%Y") " - Unreleased**"
-              print ""
-            }
-            { print }
-          ' "$TEMP_FILE" > CHANGELOG.md
-          
-          echo "Updated CHANGELOG.md content:"
-          cat CHANGELOG.md
+          cat "$TEMP_FILE" > CHANGELOG.md
           
       - name: Commit and Push Changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
-          echo "Git status:"
-          git status
-          
-          echo "Checking for changes in CHANGELOG.md..."
           if git status --porcelain | grep "CHANGELOG.md"; then
-            echo "Changes detected, committing..."
             git add CHANGELOG.md
-            git commit -m "Update CHANGELOG.md for release [skip ci]"
+            git commit -m "Update CHANGELOG.md with PR #${{ github.event.pull_request.number }} [skip ci]"
             git push origin develop
-            echo "Changes pushed successfully"
           else
             echo "No changes detected in CHANGELOG.md"
           fi
